@@ -1,4 +1,5 @@
 import streamlit as st
+
 import pandas as pd
 import json
 import os
@@ -12,7 +13,8 @@ from datetime import datetime, timedelta, time # <--- [NEW] เพิ่ม Impo
 # --- FIRESTORE SETUP ---
 import firebase_admin
 from firebase_admin import credentials, firestore
-
+from google.cloud import firestore
+from google.oauth2 import service_account
 # --- 1. SYSTEM CONFIGURATION ---
 st.set_page_config(page_title="QUANT-X | Analytics Core", layout="wide", initial_sidebar_state="expanded")
 
@@ -89,15 +91,23 @@ def init_firestore():
         if not firebase_admin._apps:
             # ⚠️ ตรวจสอบ Path Key ของคุณ
             cred_path = "credential/trade-journal-c151f-firebase-adminsdk-fbsvc-1d2d72d603.json"
+
+
+
+            # ดึง Dictionary จาก st.secrets โดยตรง
+            key_dict = st.secrets["firestore_key"]
             
-            if os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                firebase_admin.initialize_app(cred)
-            elif os.path.exists("serviceAccountKey.json"):
-                 cred = credentials.Certificate("serviceAccountKey.json")
-                 firebase_admin.initialize_app(cred)
-            else:
-                return None
+            # สร้าง Credentials โดยไม่ต้องระบุไฟล์ .json
+            creds = service_account.Credentials.from_service_account_info(key_dict)
+            firebase_admin.initialize_app(creds)
+            # if os.path.exists(cred_path):
+            #     cred = credentials.Certificate(cred_path)
+            #     firebase_admin.initialize_app(cred)
+            # elif os.path.exists("serviceAccountKey.json"):
+            #      cred = credentials.Certificate("serviceAccountKey.json")
+            #      firebase_admin.initialize_app(cred)
+            # else:
+            #     return None
         return firestore.client()
     except Exception as e:
         return None
@@ -604,3 +614,4 @@ def render_detail_view():
 # --- MAIN ---
 if st.session_state.page == 'dashboard': render_dashboard()
 else: render_detail_view()
+ 
