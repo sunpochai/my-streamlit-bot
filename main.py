@@ -92,7 +92,7 @@ from firebase_admin import firestore
 @st.cache_resource
 def init_connection():
     # โหลดค่าจาก Secrets ที่เราตั้งชื่อหัวข้อว่า [firebase]
-    key_dict = dict(st.secrets["firebase"])
+    key_dict = dict(st.secrets["firestore"])
     
     # เช็คว่าเคย init ไปหรือยัง (ป้องกัน Error เวลา Streamlit rerun)
     if not firebase_admin._apps:
