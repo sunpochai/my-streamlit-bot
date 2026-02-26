@@ -83,36 +83,25 @@ st.markdown("""
 
 # --- 2. DATA ENGINE (FIRESTORE) ---
 FIRESTORE_COLLECTION = "Signal-Trading-Journal" 
+import streamlit as st
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import firestore
 
+# ฟังก์ชันดึงข้อมูลจาก Secrets มาแปลงเป็น Dictionary
 @st.cache_resource
-def init_firestore():
-    """Initialize Firebase connection only once."""
-    try:
-        if not firebase_admin._apps:
-            # ⚠️ ตรวจสอบ Path Key ของคุณ
-            cred_path = "credential/trade-journal-c151f-firebase-adminsdk-fbsvc-1d2d72d603.json"
-
-
-
-            # ดึง Dictionary จาก st.secrets โดยตรง
-            key_dict = st.secrets["firestore_key"]
-            
-            # สร้าง Credentials โดยไม่ต้องระบุไฟล์ .json
-            creds = service_account.Credentials.from_service_account_info(key_dict)
-            firebase_admin.initialize_app(creds)
-            # if os.path.exists(cred_path):
-            #     cred = credentials.Certificate(cred_path)
-            #     firebase_admin.initialize_app(cred)
-            # elif os.path.exists("serviceAccountKey.json"):
-            #      cred = credentials.Certificate("serviceAccountKey.json")
-            #      firebase_admin.initialize_app(cred)
-            # else:
-            #     return None
-        return firestore.client()
-    except Exception as e:
-        return None
-
-db = init_firestore()
+def init_connection():
+    # โหลดค่าจาก Secrets ที่เราตั้งชื่อหัวข้อว่า [firebase]
+    key_dict = dict(st.secrets["firebase"])
+    
+    # เช็คว่าเคย init ไปหรือยัง (ป้องกัน Error เวลา Streamlit rerun)
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(key_dict)
+        firebase_admin.initialize_app(cred)
+        
+    return firestore.client()
+  
+db = init_connection()
 
 # Session State Management
 if 'page' not in st.session_state: st.session_state.page = 'dashboard'
