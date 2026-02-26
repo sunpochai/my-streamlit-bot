@@ -89,18 +89,22 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 
 # ฟังก์ชันดึงข้อมูลจาก Secrets มาแปลงเป็น Dictionary
+
+
 @st.cache_resource
 def init_connection():
-    # โหลดค่าจาก Secrets ที่เราตั้งชื่อหัวข้อว่า [firebase]
-    key_dict = dict(st.secrets["firestore"])
+    try:
+            key_dict = dict(st.secrets["firebase"])
+            
+            # ลองเช็คว่ามี \n ใน key ไหม หรือ key ขึ้นต้นด้วยหัวข้อที่ถูกต้องไหม
+            if "-----BEGIN PRIVATE KEY-----" not in key_dict.get("private_key", ""):
+                st.error("Private Key format is incorrect!")
+                
+            cred = credentials.Certificate(key_dict)
+            # ... rest of your code   
+    except Exception as e:
+            st.error(f"Error detail: {e}")
     
-    # เช็คว่าเคย init ไปหรือยัง (ป้องกัน Error เวลา Streamlit rerun)
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
-        
-    return firestore.client()
-  
 db = init_connection()
 
 # Session State Management
