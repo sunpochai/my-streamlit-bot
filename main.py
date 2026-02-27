@@ -92,20 +92,30 @@ from firebase_admin import firestore
 
 
 @st.cache_resource
-def init_connection():
-    try:
-            key_dict = dict(st.secrets["firebase"])
+def init_firebase():
+# ป้องกันการ Initialize ซ้ำเมื่อ Streamlit รีรัน
+    if not firebase_admin._apps:
+        try:
+            # ดึงค่าจาก secrets และแปลงเป็น dict
+            fb_info = dict(st.secrets["firebase"])
             
-            # ลองเช็คว่ามี \n ใน key ไหม หรือ key ขึ้นต้นด้วยหัวข้อที่ถูกต้องไหม
-            if "-----BEGIN PRIVATE KEY-----" not in key_dict.get("private_key", ""):
-                st.error("Private Key format is incorrect!")
-                
-            cred = credentials.Certificate(key_dict)
-            # ... rest of your code   
-    except Exception as e:
-            st.error(f"Error detail: {e}")
-    
-db = init_connection()
+            # บังคับจัดการตัวอักษรขึ้นบรรทัดใหม่ให้ถูกต้อง
+            if "private_key" in fb_info:
+                fb_info["private_key"] = fb_info["private_key"].replace("\\n", "\n")
+            
+            cred = credentials.Certificate(fb_info)
+            firebase_admin.initialize_app(cred)
+            st.toast("เชื่อมต่อ Firebase สำเร็จ!", icon="🔥")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ: {e}")
+            return None
+            
+    return firestore.client()
+ 
+
+# เรียกใช้ฐานข้อมูล
+db = init_firebase()
+
 
 # Session State Management
 if 'page' not in st.session_state: st.session_state.page = 'dashboard'
