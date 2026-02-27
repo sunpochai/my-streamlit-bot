@@ -91,7 +91,7 @@ from firebase_admin import firestore
 # ฟังก์ชันดึงข้อมูลจาก Secrets มาแปลงเป็น Dictionary
 
 
-@st.cache_resource
+
 def init_firebase():
 # ป้องกันการ Initialize ซ้ำเมื่อ Streamlit รีรัน
     if not firebase_admin._apps:
