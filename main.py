@@ -560,7 +560,7 @@ def render_detail_view():
         st.markdown(f"""
         <div style="margin-top: 15px; font-size: 0.9rem; color: #8b949e;">
             <b>Ticket ID:</b> <code>{selected_item.get('r_ticket', '-')}</code><br>
-            <b>Broker:</b> <code>{selected_item.get('provider', '-')}</code>
+            <b>Broker:</b> <code>{selected_item.get('model', '-')}</code>
         </div>
         """, unsafe_allow_html=True)
 
