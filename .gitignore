@@ -6,5 +6,6 @@ logs/
 data/
 venv/
 credential/
+secrets.toml
 .streamlit
   

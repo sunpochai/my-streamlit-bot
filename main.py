@@ -236,6 +236,12 @@ def render_dashboard():
     # หาค่าวันปัจจุบัน (UTC+7) เพื่อใช้เป็น Default
     now_th = datetime.utcnow() + timedelta(hours=7)
     today_date = now_th.date()
+    default_start = today_date - timedelta(days=7)
+
+    # ดึงวันแรก-สุดท้ายจาก data จริง (ถ้ามี) เพื่อกัน default ว่าง
+    if not df.empty:
+        earliest = df['Time'].dt.date.min()
+        default_start = max(earliest, default_start)
 
     with st.expander("🔍 Filter & Sort Options", expanded=True):
         # แถวแรก: Filters ทั่วไป
@@ -243,14 +249,13 @@ def render_dashboard():
         with f1: sel_sym = st.multiselect("Symbol", ["All"] + sorted(list(df['Symbol'].unique())), default=[])
         with f2: sel_act = st.multiselect("Action", ["All"] + sorted(list(df['Action'].astype(str).unique())), default=[])
         with f3: sel_strat = st.multiselect("Strategy", ["All"] + sorted(list(df['Strategy'].unique())), default=[])
-        
+
         # แถวสอง: Date Range & Sort
         d1, d2 = st.columns([2, 1])
         with d1:
-            # [NEW] Date Range Picker (Default = Today)
             date_range = st.date_input(
                 "📅 Date Range (From - To)",
-                value=(today_date, today_date),
+                value=(default_start, today_date),
                 max_value=today_date + timedelta(days=1)
             )
         with d2:
@@ -353,15 +358,15 @@ def render_dashboard():
     st.markdown("---")
     st.markdown(f"<div class='section-header'>📑 Transaction Feed (Page {st.session_state.current_page_num}/{total_pages})</div>", unsafe_allow_html=True)
     
-    h_col = st.columns([1.2, 0.8, 1, 1, 1.2, 0.8, 1.2, 1, 0.5])
-    headers = ["TIME", "SYMBOL", "TICKET", "ACTION", "STRATEGY", "STATUS", "EXIT REASON", "PNL", ""]
-    
+    h_col = st.columns([1.2, 0.8, 0.8, 0.8, 1.2, 0.7, 1.1, 0.7, 0.6, 0.5])
+    headers = ["TIME", "SYMBOL", "TICKET", "ACTION", "STRATEGY", "STATUS", "EXIT REASON", "PNL", "R×", ""]
+
     for c, h in zip(h_col, headers): c.markdown(f"**{h}**")
     st.divider()
 
     for _, row in display_df.iterrows():
-        r_col = st.columns([1.2, 0.8, 1, 1, 1.2, 0.8, 1.2, 1, 0.5])
-        
+        r_col = st.columns([1.2, 0.8, 0.8, 0.8, 1.2, 0.7, 1.1, 0.7, 0.6, 0.5])
+
         r_col[0].write(row['Time'].strftime('%Y-%m-%d %H:%M:%S'))
         r_col[1].write(f"**{row['Symbol']}**")
         r_col[2].write(f"{row['Ticket']}")
@@ -377,20 +382,27 @@ def render_dashboard():
 
         strat_str = str(row['Strategy'])
         r_col[4].markdown(f'<span style="color:#ddd6fe; font-size:0.8rem;">⚡ {strat_str}</span>', unsafe_allow_html=True)
-        
+
         status = row['Status']
         s_bg = "bg-closed" if status == "CLOSED" else "bg-open"
         r_col[5].markdown(f"<span class='badge {s_bg}'>{status}</span>", unsafe_allow_html=True)
-        
+
         exit_r = row['ExitReason']
-        if len(exit_r) > 15: exit_r = exit_r[:15] + "..." 
+        if len(exit_r) > 15: exit_r = exit_r[:15] + "..."
         r_col[6].write(f"{exit_r}")
 
         pnl_val = row['PnL'] if row['PnL'] is not None else 0.0
         pnl_color = "green" if pnl_val > 0 else "red" if pnl_val < 0 else "gray"
         r_col[7].markdown(f":{pnl_color}[${pnl_val:,.2f}]")
 
-        if r_col[8].button("➤", key=f"btn_{row['FirestoreID']}"):
+        try:
+            r_mult = float(row['FullData'].get('r_r_multiple', 0) or 0)
+            rm_color = "green" if r_mult > 0 else "red" if r_mult < 0 else "gray"
+            r_col[8].markdown(f":{rm_color}[{r_mult:+.2f}R]") if r_mult != 0 else r_col[8].write("-")
+        except:
+            r_col[8].write("-")
+
+        if r_col[9].button("➤", key=f"btn_{row['FirestoreID']}"):
             navigate('detail', row['FirestoreID'])
         st.markdown("<hr style='margin:5px 0; border-color:#30363d; opacity:0.3;'>", unsafe_allow_html=True)
 
@@ -414,26 +426,28 @@ def load_image_hybrid(path_or_url):
         else: return None
     except: return None
 
+import html as _html
+
 # [NEW] Helper for KV rows
 def render_kv_rows(data_dict):
-    """Helper to render Key-Value pairs in HTML"""
-    html_content = ""
-    sorted_keys = sorted(data_dict.keys())
-    for k in sorted_keys:
+    rows = []
+    for k in sorted(data_dict.keys()):
         v = data_dict[k]
-        # Format Value
-        if isinstance(v, float): val_str = f"{v:,.4f}"
-        elif isinstance(v, (dict, list)): val_str = "..." # ซ่อน Object ใหญ่
-        else: val_str = str(v)
-        
-        row = f"""
-        <div class="kv-row">
-            <span class="kv-key">{k}</span>
-            <span class="kv-val">{val_str}</span>
-        </div>
-        """
-        html_content += row
-    return html_content
+        if isinstance(v, float):
+            val_str = _html.escape(f"{v:,.4f}")
+        elif isinstance(v, (dict, list)):
+            val_str = "..."
+        else:
+            # Replace newlines with <br> so blank lines don't terminate the HTML block
+            val_str = _html.escape(str(v)).replace("\n", "<br>")
+        # No indentation — CommonMark treats 4+ space indent as code block
+        rows.append(
+            f'<div class="kv-row">'
+            f'<span class="kv-key">{_html.escape(str(k))}</span>'
+            f'<span class="kv-val">{val_str}</span>'
+            f'</div>'
+        )
+    return "\n".join(rows)
 
 def render_detail_view():
     selected_item = next((item for item in raw_data if item['firestore_id'] == st.session_state.selected_doc_id), None)
@@ -482,12 +496,19 @@ def render_detail_view():
     with col_head:
         act_badge = "bg-buy" if action == "BUY" else "bg-sell" if action == "SELL" else "bg-wait"
         status_badge = "bg-closed" if status == "CLOSED" else "bg-open"
+        sig_id = selected_item.get('sys_signal_id', selected_item.get('_id', '-'))
+        t_event = selected_item.get('t_event', '-')
+        bot_ver = selected_item.get('bot_version', '-')
+        exec_type = selected_item.get('e_execution_type', '-')
+        exec_badge_color = "#f59e0b" if exec_type == "LIVE" else "#6b7280"
         st.markdown(f"""
         <div style="display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
             <h1 style="margin:0;">{symbol}</h1>
             <span class="badge {act_badge}">{action}</span>
             <span class="badge {status_badge}">{status}</span>
-            <span style="color:#8b949e; margin-left:auto;">{ts}</span>
+            <span style="background:{exec_badge_color}22; color:{exec_badge_color}; border:1px solid {exec_badge_color}; padding:4px 10px; border-radius:12px; font-size:0.75rem; font-weight:bold;">{exec_type}</span>
+            <span style="color:#8b949e; font-size:0.8rem;">EVENT: <b style="color:#c9d1d9;">{t_event}</b></span>
+            <span style="color:#8b949e; font-size:0.8rem; margin-left:auto;">{sig_id} &nbsp;|&nbsp; {bot_ver} &nbsp;|&nbsp; {ts}</span>
         </div>
         """, unsafe_allow_html=True)
     st.markdown("---")
@@ -505,29 +526,69 @@ def render_detail_view():
 
     with tabs[1]:
         st.image(load_image_hybrid(selected_item.get('e_graph1_path')) or "https://placehold.co/800x400?text=No+Execution+Graph")
+        ex1, ex2, ex3, ex4 = st.columns(4)
+        e_rr = selected_item.get('e_r_r', None)
+        e_sl_usd = selected_item.get('e_sl_usd', None)
+        e_tp_usd = selected_item.get('e_tp_usd', None)
+        e_lot = selected_item.get('e_volumn', selected_item.get('r_lot_closed', None))
+        ex1.metric("R:R Ratio", f"{float(e_rr):.2f}" if e_rr else "-")
+        ex2.metric("SL (USD)", f"${float(e_sl_usd):.2f}" if e_sl_usd else "-")
+        ex3.metric("TP (USD)", f"${float(e_tp_usd):.2f}" if e_tp_usd else "-")
+        ex4.metric("Lot Size", f"{float(e_lot):.2f}" if e_lot else "-")
 
     with tabs[2]:
-        st.image(load_image_hybrid(selected_item.get('r_result_m15_url')) or "https://placehold.co/800x400?text=Pending+Result")
+        res_c1, res_c2 = st.columns(2)
+        with res_c1:
+            st.markdown("**M15 Result**")
+            st.image(load_image_hybrid(selected_item.get('r_result_m15_url')) or "https://placehold.co/600x400?text=Pending+M15+Result")
+        with res_c2:
+            st.markdown("**H1 Result**")
+            st.image(load_image_hybrid(selected_item.get('r_result_h1_url')) or "https://placehold.co/600x400?text=Pending+H1+Result")
 
     st.markdown("---")
 
     # --- INFO & REASONING SECTION ---
     c_info, c_reason, c_res = st.columns([1.2, 1.8, 1])
 
-    # Column 1: Signal Info 
+    # Column 1: Signal Info
     with c_info:
         st.markdown("### 📋 Signal Data")
-        st.write(f"**Macro:** {macro}")
+        macro_color = "#f87171" if macro == "BEARISH" else "#4ade80" if macro == "BULLISH" else "#8b949e"
+        micro = selected_item.get('t_micro_structure_m15', '-')
+        micro_color = "#4ade80" if micro == "BULLISH" else "#f87171" if micro == "BEARISH" else "#8b949e"
+        st.markdown(f"**Macro H1:** <span style='color:{macro_color};font-weight:bold;'>{macro}</span> &nbsp; **Micro M15:** <span style='color:{micro_color};font-weight:bold;'>{micro}</span>", unsafe_allow_html=True)
         st.write(f"**Strategy:** {strat}")
         st.write(f"**PA:** {pa}")
-        
+        wave = selected_item.get('s_wave_count', '-')
+        st.write(f"**Wave:** {wave}")
+
         # Handle ATR Display Safety
         try: a15 = float(atr15MText)
         except: a15 = 0.0
         try: a1h = float(atr1HText)
         except: a1h = 0.0
-        
-        st.write(f"**ATR:** {a15:.5f}(15M) / {a1h:.5f}(1H)")
+        st.write(f"**ATR:** {a15:.2f}(15M) / {a1h:.2f}(1H)")
+
+        rsi = selected_item.get('t_rsi_14', None)
+        if rsi is not None:
+            try:
+                rsi = float(rsi)
+                rsi_color = "#f87171" if rsi > 70 else "#4ade80" if rsi < 30 else "#d29922"
+                st.markdown(f"**RSI(14):** <span style='color:{rsi_color};'>{rsi:.1f}</span>", unsafe_allow_html=True)
+            except: pass
+
+        vol_status = selected_item.get('t_volume_status', '-')
+        vol_ratio = selected_item.get('t_volume_ratio', None)
+        vol_val = selected_item.get('t_signal_volume_value', '-')
+        vol_avg = selected_item.get('t_average_volume_sma20', '-')
+        vol_ratio_str = f" ({float(vol_ratio):.2f}x)" if vol_ratio is not None else ""
+        st.write(f"**Vol:** {vol_status}{vol_ratio_str} | {vol_val}/{vol_avg}")
+
+        ob = selected_item.get('t_nearest_order_block', '-')
+        zone = selected_item.get('t_zone_status', '-')
+        st.write(f"**OB:** {str(ob)[:30]}")
+        st.write(f"**Zone:** {zone}")
+
         st.divider()
         st.write(f"**Entry:** {entry:,.5f}")
         st.write(f"**SL:** {sl:,.5f}")
@@ -542,7 +603,8 @@ def render_detail_view():
         
         # --- กล่องข้อความแบบขยายขนาดตัวอักษร ---
         reason_text = selected_item.get('s_reasoning', 'No reasoning provided.')
-        
+        reason_text = reason_text.replace('\n', '<br>')
+
         st.markdown(f"""
         <div style="
             background-color: rgba(56, 139, 253, 0.1); 
@@ -560,7 +622,9 @@ def render_detail_view():
         st.markdown(f"""
         <div style="margin-top: 15px; font-size: 0.9rem; color: #8b949e;">
             <b>Ticket ID:</b> <code>{selected_item.get('r_ticket', '-')}</code><br>
-            <b>Broker:</b> <code>{selected_item.get('model', '-')}</code>
+            <b>Broker Ticket:</b> <code>{selected_item.get('e_broker_ticket_id', '-')}</code><br>
+            <b>AI Model:</b> <code>{selected_item.get('model', '-')}</code>&nbsp;
+            <b>Provider:</b> <code>{selected_item.get('provider', '-')}</code>
         </div>
         """, unsafe_allow_html=True)
 
@@ -579,7 +643,33 @@ def render_detail_view():
             </div>
             """, unsafe_allow_html=True)
             st.markdown(f"**Exit:** `{close_reason}`")
-            st.markdown(f"**Time:** `{selected_item.get('r_close_time', '-')}`")
+            st.markdown(f"**Close Time:** `{selected_item.get('r_close_time', '-')}`")
+            st.divider()
+            r_entry_p = selected_item.get('r_entry_price', None)
+            r_exit_p = selected_item.get('r_exit_price', None)
+            r_hold = selected_item.get('r_hold_time_mins', None)
+            r_lot = selected_item.get('r_lot_closed', selected_item.get('r_lot_size', None))
+            r_swap = selected_item.get('r_swap', None)
+            r_comm = selected_item.get('r_commission', None)
+            r_raw = selected_item.get('r_profit_raw', None)
+            r_rmult = selected_item.get('r_r_multiple', None)
+            if r_entry_p: st.write(f"**Entry Price:** `{float(r_entry_p):,.5f}`")
+            if r_exit_p: st.write(f"**Exit Price:** `{float(r_exit_p):,.5f}`")
+            if r_hold:
+                try:
+                    h = float(r_hold)
+                    st.write(f"**Hold Time:** `{h:.0f} min ({h/60:.1f}h)`")
+                except: pass
+            if r_lot: st.write(f"**Lot Size:** `{float(r_lot):.2f}`")
+            if r_rmult:
+                try:
+                    rm = float(r_rmult)
+                    rm_color = "#4ade80" if rm > 0 else "#f87171"
+                    st.markdown(f"**R Multiple:** <span style='color:{rm_color};font-weight:bold;'>{rm:+.2f}R</span>", unsafe_allow_html=True)
+                except: pass
+            if r_raw is not None: st.write(f"**Raw Profit:** `${float(r_raw):,.2f}`")
+            if r_swap is not None: st.write(f"**Swap:** `${float(r_swap):,.2f}`")
+            if r_comm is not None: st.write(f"**Commission:** `${float(r_comm):,.2f}`")
         else:
             st.markdown("""
             <div style="background:#58a6ff15; border:1px solid #58a6ff; padding:20px; border-radius:10px; text-align:center;">
